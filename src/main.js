@@ -383,9 +383,9 @@
   volumeInput.value = String(music ? music.volume : 0.5);
   // open the music panel and it starts, unless you paused it yourself
   let playOnOpen = musicPrefs.on !== false;
-  // music was on last visit: start with the first tap or click (browsers
-  // won't start audio before one)
-  let playOnFirstInput = musicPrefs.on === true;
+  // music is on by default unless you paused it last visit: start with the
+  // first tap or click (browsers won't start audio before one)
+  let playOnFirstInput = musicPrefs.on !== false;
 
   function saveMusic() {
     try { localStorage.setItem(MUSIC_KEY, JSON.stringify({ volume: music.volume, on: music.playing })); } catch (e) { /* not persisted */ }
@@ -416,7 +416,10 @@
     musicToggle.disabled = true;
     musicToggle.title = 'Music needs the Web Audio API, which this browser does not have';
   }
-  document.addEventListener('pointerup', () => { if (playOnFirstInput) setPlaying(true); }, true);
+  // skip the play button itself, or its click would pause what this just started
+  document.addEventListener('pointerup', (e) => {
+    if (playOnFirstInput && !playButton.contains(e.target)) setPlaying(true);
+  }, true);
   let resumeOnShow = false;
   document.addEventListener('visibilitychange', () => {
     if (!music) return;

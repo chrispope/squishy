@@ -28,7 +28,7 @@ On touch devices, one finger uses the mode selected in the bottom bar, two finge
 
 The **Feel** panel has four presets (Jelly, Firm, Mochi, Slow rise) and sliders for firmness, wobble, slow rise, squeeze behaviour and floor grip. Changes apply live and are saved in the browser. Presets and slider mappings live in `FEEL_PRESETS` and `feelToParams()` in `src/softbody.js`.
 
-The note button plays a generative ambient soundtrack (pads, chimes, air) synthesized live with the Web Audio API in `src/music.js`. No audio files.
+Music is on by default and starts with your first tap or click (browsers block audio before one); the note button pauses it or changes the volume. It's a generative ambient soundtrack (pads, chimes, air) synthesized live with the Web Audio API in `src/music.js`. No audio files.
 
 ## How it works
 
