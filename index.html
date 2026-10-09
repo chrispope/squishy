@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Cube squishy</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #000000;
+      --ink: #f5e8d7;
+      --ink-soft: rgba(245, 232, 215, 0.66);
+      --glass: rgba(22, 22, 24, 0.6);
+      --glass-edge: rgba(245, 232, 215, 0.13);
+      --lamp: #f7e3c5;
+      --lamp-ink: #1d1a17;
+      --glitter: #e8388f;
+      --font: "Fredoka", ui-rounded, "SF Pro Rounded", "Nunito", system-ui, sans-serif;
+      box-sizing: border-box;
+      padding-top: env(safe-area-inset-top, 0px);
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --glass: rgba(18, 18, 20, 0.64);
+        --glass-edge: rgba(245, 232, 215, 0.12);
+      }
+    }
+    :root[data-theme="dark"] {
+      --glass: rgba(18, 18, 20, 0.64);
+      --glass-edge: rgba(245, 232, 215, 0.12);
+    }
+    html { height: 100%; scroll-padding-top: env(safe-area-inset-top, 0px); }
+    *, *::before, *::after { box-sizing: inherit; }
+    body {
+      margin: 0;
+      height: 100%;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: var(--font);
+      -webkit-font-smoothing: antialiased;
+    }
+    #scene {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+      touch-action: none;
+      outline: none;
+    }
+    .title {
+      position: fixed;
+      top: 0;
+      left: 0;
+      padding: calc(env(safe-area-inset-top, 0px) + 20px) 24px 0 calc(env(safe-area-inset-left, 0px) + 24px);
+      pointer-events: none;
+    }
+    .title h1 {
+      margin: 0;
+      font-weight: 600;
+      font-size: 1.375rem;
+      letter-spacing: 0.01em;
+      line-height: 1.1;
+    }
+    .title p {
+      margin: 0.25rem 0 0;
+      font-size: 0.875rem;
+      color: var(--ink-soft);
+    }
+    .controls {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      padding: 0 16px calc(env(safe-area-inset-bottom, 0px) + 18px);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      pointer-events: none;
+    }
+    .dock {
+      pointer-events: auto;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px;
+      border-radius: 22px;
+      background: var(--glass);
+      border: 1px solid var(--glass-edge);
+      -webkit-backdrop-filter: blur(14px) saturate(1.2);
+      backdrop-filter: blur(14px) saturate(1.2);
+    }
+    .modes { display: flex; gap: 2px; }
+    .dock button {
+      font: inherit;
+      font-size: 0.9375rem;
+      font-weight: 500;
+      color: var(--ink);
+      background: transparent;
+      border: 0;
+      border-radius: 16px;
+      min-height: 40px;
+      padding: 0 16px;
+      cursor: pointer;
+      transition: background-color 160ms ease, color 160ms ease;
+    }
+    .dock button:hover { background: rgba(245, 232, 215, 0.08); }
+    .dock button[aria-pressed="true"] {
+      background: var(--lamp);
+      color: var(--lamp-ink);
+    }
+    .dock button:focus-visible {
+      outline: 2px solid var(--glitter);
+      outline-offset: 2px;
+    }
+    .actions {
+      display: flex;
+      gap: 2px;
+      padding-left: 6px;
+      margin-left: 2px;
+      border-left: 1px solid var(--glass-edge);
+    }
+    .actions button { color: var(--ink-soft); }
+    .actions button:hover,
+    .actions button[aria-expanded="true"] { color: var(--ink); }
+    .actions button[aria-expanded="true"] { background: rgba(245, 232, 215, 0.1); }
+
+    .feel {
+      position: fixed;
+      top: calc(env(safe-area-inset-top, 0px) + 16px);
+      right: calc(env(safe-area-inset-right, 0px) + 16px);
+      width: 292px;
+      max-height: calc(100% - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 150px);
+      overflow-y: auto;
+      padding: 16px 18px 18px;
+      border-radius: 22px;
+      background: var(--glass);
+      border: 1px solid var(--glass-edge);
+      -webkit-backdrop-filter: blur(16px) saturate(1.2);
+      backdrop-filter: blur(16px) saturate(1.2);
+    }
+    .feel[hidden] { display: none; }
+    .feel-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .feel h2 { margin: 0; font-size: 1.0625rem; font-weight: 600; }
+    .feel .close {
+      font: inherit;
+      font-size: 1.25rem;
+      line-height: 1;
+      width: 32px;
+      height: 32px;
+      border: 0;
+      border-radius: 50%;
+      background: transparent;
+      color: var(--ink-soft);
+      cursor: pointer;
+    }
+    .feel .close:hover { color: var(--ink); background: rgba(245, 232, 215, 0.08); }
+    .presets {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 4px;
+      padding: 4px;
+      margin-bottom: 16px;
+      border-radius: 14px;
+      background: rgba(245, 232, 215, 0.06);
+    }
+    .presets button {
+      font: inherit;
+      font-size: 0.8125rem;
+      font-weight: 500;
+      min-height: 34px;
+      padding: 0 4px;
+      border: 0;
+      border-radius: 10px;
+      background: transparent;
+      color: var(--ink);
+      cursor: pointer;
+    }
+    .presets button[aria-pressed="true"] { background: var(--lamp); color: var(--lamp-ink); }
+    .slider { display: block; margin-top: 12px; }
+    .slider .name { display: block; font-size: 0.875rem; font-weight: 500; }
+    .slider input {
+      display: block;
+      width: 100%;
+      margin: 6px 0 2px;
+      accent-color: var(--lamp);
+      cursor: pointer;
+    }
+    .slider .ends {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.75rem;
+      color: var(--ink-soft);
+    }
+    .feel button:focus-visible,
+    .slider input:focus-visible {
+      outline: 2px solid var(--glitter);
+      outline-offset: 2px;
+    }
+    .hint {
+      margin: 0;
+      max-width: 34rem;
+      text-align: center;
+      font-size: 0.875rem;
+      line-height: 1.45;
+      color: var(--ink-soft);
+      text-shadow: 0 1px 8px rgba(0, 0, 0, 0.5);
+    }
+    .hint .nav { display: block; opacity: 0.8; }
+    .status {
+      position: fixed;
+      inset: 0;
+      margin: auto;
+      height: fit-content;
+      max-width: 26rem;
+      padding: 18px 20px;
+      border-radius: 18px;
+      background: var(--glass);
+      border: 1px solid var(--glass-edge);
+      text-align: center;
+      line-height: 1.5;
+    }
+    @media (max-width: 640px) {
+      .feel {
+        top: calc(env(safe-area-inset-top, 0px) + 56px);
+        left: calc(env(safe-area-inset-left, 0px) + 12px);
+        right: calc(env(safe-area-inset-right, 0px) + 12px);
+        width: auto;
+        max-height: 52%;
+      }
+    }
+    @media (max-width: 520px) {
+      .title h1 { font-size: 1.125rem; }
+      .title p { display: none; }
+      .dock button { padding: 0 10px; font-size: 0.875rem; }
+      .hint .nav { display: none; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .dock button { transition: none; }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="scene" aria-label="A clear jelly cube with a magenta glitter core, sitting on a dark floor against a black background. Press, pinch or pull it with your pointer."></canvas>
+
+  <header class="title">
+    <h1>Cube squishy</h1>
+    <p>Clear jelly, magenta glitter core.</p>
+  </header>
+
+  <div class="controls">
+    <div class="dock" role="toolbar" aria-label="How your pointer squishes the cube">
+      <div class="modes">
+        <button type="button" data-mode="press" aria-pressed="true" title="Press (1)">Press</button>
+        <button type="button" data-mode="pinch" aria-pressed="false" title="Pinch (2, or hold Shift)">Pinch</button>
+        <button type="button" data-mode="pull" aria-pressed="false" title="Pull (3, or right-drag)">Pull</button>
+      </div>
+      <div class="actions">
+        <button type="button" id="drop" title="Drop it again (R)">Drop it</button>
+        <button type="button" id="feel-toggle" aria-expanded="false" aria-controls="feel" title="Squishy feel (F)">Feel</button>
+      </div>
+    </div>
+    <p class="hint" id="hint" aria-live="polite">
+      <span class="mode"></span>
+      <span class="nav">Drag the background to look around. Scroll to zoom.</span>
+    </p>
+  </div>
+
+  <section class="feel" id="feel" aria-labelledby="feel-title" hidden>
+    <div class="feel-head">
+      <h2 id="feel-title">Squishy feel</h2>
+      <button type="button" class="close" id="feel-close" aria-label="Close squishy feel">&times;</button>
+    </div>
+    <div class="presets" role="group" aria-label="Presets">
+      <button type="button" data-preset="jelly" aria-pressed="true">Jelly</button>
+      <button type="button" data-preset="firm" aria-pressed="false">Firm</button>
+      <button type="button" data-preset="mochi" aria-pressed="false">Mochi</button>
+      <button type="button" data-preset="foam" aria-pressed="false">Slow rise</button>
+    </div>
+    <label class="slider">
+      <span class="name">Firmness</span>
+      <input type="range" min="0" max="1" step="0.01" data-feel="firmness" aria-describedby="ends-firmness">
+      <span class="ends" id="ends-firmness"><span>Soft</span><span>Solid</span></span>
+    </label>
+    <label class="slider">
+      <span class="name">Wobble</span>
+      <input type="range" min="0" max="1" step="0.01" data-feel="wobble" aria-describedby="ends-wobble">
+      <span class="ends" id="ends-wobble"><span>Settles at once</span><span>Jiggly</span></span>
+    </label>
+    <label class="slider">
+      <span class="name">Slow rise</span>
+      <input type="range" min="0" max="1" step="0.01" data-feel="slowRise" aria-describedby="ends-slowRise">
+      <span class="ends" id="ends-slowRise"><span>Springs back</span><span>Rises slowly</span></span>
+    </label>
+    <label class="slider">
+      <span class="name">When squeezed</span>
+      <input type="range" min="0" max="1" step="0.01" data-feel="squeeze" aria-describedby="ends-squeeze">
+      <span class="ends" id="ends-squeeze"><span>Bulges out</span><span>Compresses</span></span>
+    </label>
+    <label class="slider">
+      <span class="name">Grip on the floor</span>
+      <input type="range" min="0" max="1" step="0.01" data-feel="grip" aria-describedby="ends-grip">
+      <span class="ends" id="ends-grip"><span>Slippery</span><span>Tacky</span></span>
+    </label>
+  </section>
+
+  <p class="status" id="status" role="alert" hidden></p>
+
+  <script src="https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.min.js"></script>
+  <script src="src/softbody.js"></script>
+  <script src="src/main.js"></script>
+</body>
+</html>

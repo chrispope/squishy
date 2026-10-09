@@ -1,0 +1,14 @@
+{
+  "name": "squishy",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A clear jelly cube squishy with a glitter core, simulated as a volumetric soft body in three.js.",
+  "scripts": {
+    "start": "python3 -m http.server 5173",
+    "build": "node scripts/build.mjs",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
