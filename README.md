@@ -25,6 +25,32 @@ npm start            # python3 -m http.server 5173, then open http://localhost:5
 | `1` `2` `3` | Press, Pinch, Pull |
 | `R` | Drop the cube again |
 | `F` | Open or close the feel settings |
+| `M` | Play or pause the music |
+
+### On a phone or tablet
+
+| Gesture | What it does |
+| --- | --- |
+| One finger on the cube | Whatever mode is selected in the bottom bar (Press, Pinch or Pull) |
+| Two fingers on the cube, pinch together | Squeezes it along the line between your fingers |
+| Two fingers on the cube, spread apart | Stretches it |
+| Two fingers on the background | Zoom |
+| One finger on the background | Orbit |
+
+After a two-finger gesture the remaining finger is ignored until you lift it, so lifting one finger doesn't turn into a press.
+
+## Music
+
+The note button in the bottom bar opens the music panel. Opening it the first time starts playback, and there's a play/pause button and a volume slider. Your volume and on/off choice are saved, and if the music was on last time it starts again with your first tap or click, since browsers don't allow audio before one. It pauses when the tab is hidden.
+
+Everything is synthesized live with the Web Audio API in `src/music.js`, no audio files:
+
+- **Pads:** a slow four-chord loop in D (Dmaj9, Bm11, Gmaj9#11, A6/9), 11 seconds per chord. Each note is a detuned saw and triangle pair through a low-pass filter that slowly opens and closes.
+- **Chimes:** sparse sine bells with a quiet inharmonic partial, picked from D major pentatonic so they fit every chord. Now and then a short run of two or three notes.
+- **Air:** brown noise through a drifting band-pass filter with a slow swell, like breathing.
+- **Space:** everything goes through one convolution reverb made from decaying noise, then a gentle compressor.
+
+On iOS it asks for media playback so it plays even with the silent switch on, like a video would.
 
 ## Squishy feel
 
@@ -61,6 +87,10 @@ The **Feel** button opens a panel with four presets and five sliders. Changes ap
 
 The solver has no three.js dependency and runs in Node for tests.
 
+### Two-finger squeeze
+
+Both touch points are projected onto a plane through the cube that faces the camera. The cube is pressed from both ends of the line through your fingers (kept inside the cube), using the same press field as a single finger. The press depth is half of how much closer your fingers are than when they landed, so spreading them gives a negative depth, which pulls the sides out.
+
 ### Rendering (`src/main.js`)
 
 - The jelly is a rounded box (32 segments per face) embedded in the lattice with trilinear weights. Normals are recomputed every frame on a seam-merged topology so the rounded edges stay smooth while each face keeps its own UVs.
@@ -71,6 +101,7 @@ The solver has no three.js dependency and runs in Node for tests.
 - The floor is dark and slightly satin with a faint mottled roughness, lit only near the cube. A radial falloff and black fog fade it into the background, so it grounds the cube without reading as a specific surface.
 - Contact shadow, soft shadow and the pink caustic on the floor are decals sized from the current footprint. The jelly does not cast a shadow map, since a solid black shadow looks wrong for a clear object.
 - The jelly skin, floor roughness and sparkle map are generated on a canvas at startup. No image assets.
+- Quality steps down automatically if the frame rate stays under about 40 fps for 2 seconds: lower resolution first, then fewer glitter flakes, then a larger solver substep (1/480 s, tested stable at every feel setting). Phones and tablets start one step down.
 
 ## Tuning
 
@@ -108,6 +139,7 @@ npm run build        # writes dist/index.html with the local scripts inlined
 index.html            page, styles, UI
 src/softbody.js       soft body solver (no dependencies)
 src/main.js           scene, materials, interaction
+src/music.js          generative ambient music (Web Audio)
 scripts/build.mjs     single-file build
 tests/                node:test suite for the solver
 ```

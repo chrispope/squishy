@@ -369,17 +369,84 @@
     Object.assign(feel, FEEL_PRESETS[b.dataset.preset]);
     commitFeel();
   }));
-  function setFeelOpen(open) {
-    feelPanel.hidden = !open;
-    feelToggle.setAttribute('aria-expanded', String(open));
-    if (open) {
-      const first = feelPanel.querySelector('[aria-pressed="true"]') || sliders[0];
-      first.focus({ preventScroll: true });
-    }
-  }
-  feelToggle.addEventListener('click', () => setFeelOpen(feelPanel.hidden));
-  $('#feel-close').addEventListener('click', () => { setFeelOpen(false); feelToggle.focus(); });
   renderFeel();
+
+  // ------------------------------------------------------------------ music
+  const music = window.SquishyMusic ? window.SquishyMusic.create() : null;
+  const MUSIC_KEY = 'cube-squishy-music';
+  let musicPrefs = {};
+  try { musicPrefs = JSON.parse(localStorage.getItem(MUSIC_KEY) || 'null') || {}; } catch (e) { /* default */ }
+  const musicToggle = $('#music-toggle');
+  const playButton = $('#music-play');
+  const volumeInput = $('#music-volume');
+  if (music) music.setVolume(typeof musicPrefs.volume === 'number' ? musicPrefs.volume : 0.5);
+  volumeInput.value = String(music ? music.volume : 0.5);
+  // open the music panel and it starts, unless you paused it yourself
+  let playOnOpen = musicPrefs.on !== false;
+  // music was on last visit: start with the first tap or click (browsers
+  // won't start audio before one)
+  let playOnFirstInput = musicPrefs.on === true;
+
+  function saveMusic() {
+    try { localStorage.setItem(MUSIC_KEY, JSON.stringify({ volume: music.volume, on: music.playing })); } catch (e) { /* not persisted */ }
+  }
+  function renderMusic() {
+    const on = !!(music && music.playing);
+    playButton.textContent = on ? 'Pause' : 'Play';
+    playButton.setAttribute('aria-pressed', String(on));
+    musicToggle.dataset.playing = String(on);
+  }
+  function setPlaying(on) {
+    if (!music || !music.supported) return;
+    playOnFirstInput = false;
+    if (on) music.start();
+    else { music.pause(); playOnOpen = false; }
+    renderMusic();
+    saveMusic();
+  }
+  playButton.addEventListener('click', () => setPlaying(!music.playing));
+  volumeInput.addEventListener('input', () => {
+    if (!music) return;
+    music.setVolume(parseFloat(volumeInput.value));
+    // turning it up while paused means you want to hear it
+    if (!music.playing && music.volume > 0) setPlaying(true);
+    else saveMusic();
+  });
+  if (!music || !music.supported) {
+    musicToggle.disabled = true;
+    musicToggle.title = 'Music needs the Web Audio API, which this browser does not have';
+  }
+  document.addEventListener('pointerup', () => { if (playOnFirstInput) setPlaying(true); }, true);
+  let resumeOnShow = false;
+  document.addEventListener('visibilitychange', () => {
+    if (!music) return;
+    if (document.hidden && music.playing) { resumeOnShow = true; music.pause(); renderMusic(); }
+    else if (!document.hidden && resumeOnShow) { resumeOnShow = false; music.start(); renderMusic(); }
+  });
+  renderMusic();
+
+  // ----------------------------------------------------------------- panels
+  const panels = {
+    feel: { panel: feelPanel, toggle: feelToggle, close: $('#feel-close'), first: () => feelPanel.querySelector('[aria-pressed="true"]') || sliders[0] },
+    music: { panel: $('#music'), toggle: musicToggle, close: $('#music-close'), first: () => playButton },
+  };
+  let openPanel = null;
+  function setPanel(name, focusInside) {
+    for (const [key, p] of Object.entries(panels)) {
+      p.panel.hidden = key !== name;
+      p.toggle.setAttribute('aria-expanded', String(key === name));
+    }
+    openPanel = name;
+    if (name === 'music' && playOnOpen && music && !music.playing) {
+      playOnOpen = false;
+      setPlaying(true);
+    }
+    if (name && focusInside) panels[name].first().focus({ preventScroll: true });
+  }
+  for (const [key, p] of Object.entries(panels)) {
+    p.toggle.addEventListener('click', () => setPanel(openPanel === key ? null : key, true));
+    p.close.addEventListener('click', () => { setPanel(null); p.toggle.focus(); });
+  }
 
   // Rounded box made from a subdivided box: every vertex is clamped to the
   // inner box and pushed out by the corner radius. Duplicate vertices along
@@ -597,7 +664,7 @@
     sb.evaluate(f.emb, f.cur);
     pushOutOfFingers(f.cur, 0.12);
     _qb.set(sb.q[0], sb.q[1], sb.q[2], sb.q[3]);
-    for (let i = 0; i < f.count; i++) {
+    for (let i = 0; i < mesh.count; i++) {
       _p.set(f.cur[3 * i], f.cur[3 * i + 1], f.cur[3 * i + 2]);
       _q.set(f.quat[4 * i], f.quat[4 * i + 1], f.quat[4 * i + 2], f.quat[4 * i + 3]).premultiply(_qb);
       _s.setScalar(f.scale[i]);
@@ -730,11 +797,19 @@
   resize();
 
   // ------------------------------------------------------------ interaction
-  const MODES = {
+  const coarse = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+  const MODES = coarse ? {
+    press: 'Hold on the cube to push in. Drag while holding to smear it.',
+    pinch: 'Hold on the cube to squeeze it front to back.',
+    pull: 'Grab the cube and drag to stretch it. Lift it and let go to drop it.',
+  } : {
     press: 'Hold on the cube to push in. Keep holding and drag to smear it. Scroll while pressing to push harder.',
-    pinch: 'Hold on the cube to squeeze it between two fingers, front to back.',
+    pinch: 'Hold on the cube to squeeze it front to back. Shift-drag does this in any mode.',
     pull: 'Grab the cube and drag to stretch it. Lift it off the floor and let go to drop it.',
   };
+  $('#hint .nav').textContent = coarse
+    ? 'Pinch two fingers on the cube to squeeze it, or spread them to stretch it. Pinch anywhere else to zoom.'
+    : 'Drag the background to look around. Scroll to zoom.';
   let mode = 'press';
   const hintEl = $('#hint .mode');
   const modeButtons = Array.from(document.querySelectorAll('[data-mode]'));
@@ -754,16 +829,26 @@
 
   const raycaster = new THREE.Raycaster();
   const ndc = new THREE.Vector2();
+  const tmpNdc = new THREE.Vector2();
   let action = null;
-  let activePointer = null;
   let last = { x: 0, y: 0 };
+  const pointers = new Map(); // pointerId -> { x, y }
+  let primary = null; // the pointer driving a one-finger action
+  let waitForRelease = false; // after a two-finger gesture, ignore the finger left behind
 
-  function setNdc(e) {
+  function toNdc(x, y, out) {
     const r = canvas.getBoundingClientRect();
-    ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    return out.set(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1);
+  }
+  function setNdc(e) {
+    toNdc(e.clientX, e.clientY, ndc);
   }
   function currentRay() {
     raycaster.setFromCamera(ndc, camera);
+    return raycaster.ray;
+  }
+  function rayAt(x, y) {
+    raycaster.setFromCamera(toNdc(x, y, tmpNdc), camera);
     return raycaster.ray;
   }
   function restHit(frame) {
@@ -771,6 +856,12 @@
     const o = ray.origin, d = ray.direction;
     return sb.raycastRest(o.x, o.y, o.z, d.x, d.y, d.z, frame);
   }
+  function hitsCubeAt(x, y, frame) {
+    const { origin: o, direction: d } = rayAt(x, y);
+    return !!sb.raycastRest(o.x, o.y, o.z, d.x, d.y, d.z, frame);
+  }
+
+  const brushOpts = { radius: 0.55, stiffness: 0.32, drag: 0.65 };
 
   function startPress(kind) {
     sb.computeFrame();
@@ -778,14 +869,13 @@
     const hit = restHit(frame);
     if (!hit) return false;
     const pinch = kind === 'pinch';
-    const opts = { radius: pinch ? 0.5 : 0.55, stiffness: 0.32, drag: 0.65 };
+    const opts = Object.assign({}, brushOpts, { radius: pinch ? 0.5 : 0.55 });
     const brushes = [sb.createBrush(frame, opts)];
     if (pinch) brushes.push(sb.createBrush(frame, opts));
     action = {
       kind, frame, brushes, held: true, depth: 0,
       maxDepth: feelParams.pressDepth * (pinch ? 0.88 : 1),
       tIn: hit.tIn, tOut: hit.tOut, n: [hit.nx, hit.ny, hit.nz],
-      lag: null,
     };
     updatePress(0, true);
     return true;
@@ -865,6 +955,71 @@
     }
   }
 
+  // ---- two fingers: squeeze or stretch the cube, or zoom the camera
+  // Your two fingers are projected onto a plane through the cube facing the
+  // camera. The cube is pressed from both ends of the line through them, so
+  // pinching squeezes it along whatever direction your fingers line up, and
+  // spreading them pulls the two sides out.
+  const squeezePlane = new THREE.Plane();
+  const fingerPosA = new THREE.Vector3(), fingerPosB = new THREE.Vector3(), squeezeCentre = new THREE.Vector3();
+  function twoFingers() {
+    const [a, b] = Array.from(pointers.values());
+    return { a, b, d: Math.hypot(a.x - b.x, a.y - b.y), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 };
+  }
+  function startTwoFinger() {
+    endAction();
+    primary = null;
+    sb.computeFrame();
+    const frame = sb.snapshotFrame();
+    const t = twoFingers();
+    const onCube = hitsCubeAt(t.a.x, t.a.y, frame) || hitsCubeAt(t.b.x, t.b.y, frame) || hitsCubeAt(t.mx, t.my, frame);
+    if (!onCube) {
+      action = { kind: 'zoom', d0: Math.max(t.d, 1), r0: orbit.radius };
+      return;
+    }
+    camera.getWorldDirection(camDir);
+    squeezeCentre.set(frame.c[0], frame.c[1], frame.c[2]);
+    squeezePlane.setFromNormalAndCoplanarPoint(camDir, squeezeCentre);
+    action = {
+      kind: 'squeeze', frame,
+      brushes: [sb.createBrush(frame, brushOpts), sb.createBrush(frame, brushOpts)],
+      w0: null, depth: 0, axis: [1, 0, 0],
+    };
+    updateSqueeze(0, true);
+  }
+  function updateSqueeze(dt, first) {
+    const a = action;
+    const t = twoFingers();
+    if (!rayAt(t.a.x, t.a.y).intersectPlane(squeezePlane, fingerPosA)) return;
+    if (!rayAt(t.b.x, t.b.y).intersectPlane(squeezePlane, fingerPosB)) return;
+    const w = fingerPosA.distanceTo(fingerPosB);
+    if (a.w0 === null) a.w0 = w;
+    if (w > 1e-3) {
+      a.axis = [(fingerPosB.x - fingerPosA.x) / w, (fingerPosB.y - fingerPosA.y) / w, (fingerPosB.z - fingerPosA.z) / w];
+    }
+    const ax = a.axis, c = squeezeCentre;
+    // squeeze line passes through the fingers' midpoint, kept inside the cube
+    let qx = (fingerPosA.x + fingerPosB.x) / 2 - c.x;
+    let qy = (fingerPosA.y + fingerPosB.y) / 2 - c.y;
+    let qz = (fingerPosA.z + fingerPosB.z) / 2 - c.z;
+    const along = qx * ax[0] + qy * ax[1] + qz * ax[2];
+    qx -= ax[0] * along; qy -= ax[1] * along; qz -= ax[2] * along;
+    const off = Math.hypot(qx, qy, qz);
+    if (off > 0.75) { qx *= 0.75 / off; qy *= 0.75 / off; qz *= 0.75 / off; }
+    qx += c.x; qy += c.y; qz += c.z;
+    const far = 4;
+    const ha = sb.raycastRest(qx - ax[0] * far, qy - ax[1] * far, qz - ax[2] * far, ax[0], ax[1], ax[2], a.frame);
+    const hb = sb.raycastRest(qx + ax[0] * far, qy + ax[1] * far, qz + ax[2] * far, -ax[0], -ax[1], -ax[2], a.frame);
+    if (!ha || !hb) return;
+    const ca = [qx + ax[0] * (ha.tIn - far), qy + ax[1] * (ha.tIn - far), qz + ax[2] * (ha.tIn - far)];
+    const cb = [qx - ax[0] * (hb.tIn - far), qy - ax[1] * (hb.tIn - far), qz - ax[2] * (hb.tIn - far)];
+    // fingers moving together squeezes (positive), apart stretches (negative)
+    const target = clamp((a.w0 - w) / 2 + 0.04, -0.38, feelParams.pressDepth * 1.25);
+    a.depth = first ? target : a.depth + (target - a.depth) * (1 - Math.exp(-12 * dt));
+    setBrush(a.brushes[0], fingerA, ca, ax, a.depth, dt, first);
+    setBrush(a.brushes[1], fingerB, cb, [-ax[0], -ax[1], -ax[2]], a.depth, dt, first);
+  }
+
   function endAction() {
     if (!action) return;
     if (action.kind === 'pull') sb.endGrab();
@@ -878,10 +1033,13 @@
   }
 
   canvas.addEventListener('pointerdown', (e) => {
-    if (activePointer !== null) return;
+    if (e.pointerType === 'mouse' && e.button !== 0 && e.button !== 2) return;
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* pointer already gone */ }
+    if (pointers.size === 2) { startTwoFinger(); return; }
+    if (pointers.size > 2 || waitForRelease) return;
+    primary = e.pointerId;
     setNdc(e);
-    activePointer = e.pointerId;
-    canvas.setPointerCapture(e.pointerId);
     last = { x: e.clientX, y: e.clientY };
     let kind = mode;
     if (e.shiftKey) kind = 'pinch';
@@ -895,7 +1053,15 @@
   });
 
   canvas.addEventListener('pointermove', (e) => {
-    if (activePointer !== null && e.pointerId !== activePointer) return;
+    const p = pointers.get(e.pointerId);
+    if (p) { p.x = e.clientX; p.y = e.clientY; }
+    if (action && action.kind === 'zoom') {
+      orbit.radius = clamp(action.r0 * action.d0 / Math.max(twoFingers().d, 1), 3.6, 10);
+      return;
+    }
+    if (action && action.kind === 'squeeze') return; // follows the fingers every frame
+    if (pointers.size > 1 || waitForRelease) return;
+    if (primary !== null && e.pointerId !== primary) return;
     setNdc(e);
     if (action && action.kind === 'orbit') {
       const dx = e.clientX - last.x, dy = e.clientY - last.y;
@@ -903,17 +1069,24 @@
       orbit.vp = -dy * 0.0055;
       orbit.theta += orbit.vt;
       orbit.phi += orbit.vp;
-    } else if (!action) {
+    } else if (!action && e.pointerType === 'mouse') {
       canvas.style.cursor = overCube() ? (mode === 'pull' ? 'grab' : 'pointer') : 'default';
     }
     last = { x: e.clientX, y: e.clientY };
   });
 
   function release(e) {
-    if (e.pointerId !== activePointer) return;
-    activePointer = null;
-    if (action && action.kind === 'orbit') action = null;
-    else endAction();
+    if (!pointers.has(e.pointerId)) return;
+    pointers.delete(e.pointerId);
+    if (action && (action.kind === 'squeeze' || action.kind === 'zoom')) {
+      endAction();
+      waitForRelease = pointers.size > 0;
+    } else if (e.pointerId === primary) {
+      primary = null;
+      if (action && action.kind === 'orbit') action = null;
+      else endAction();
+    }
+    if (pointers.size === 0) waitForRelease = false;
     canvas.style.cursor = 'default';
   }
   canvas.addEventListener('pointerup', release);
@@ -932,13 +1105,55 @@
   window.addEventListener('keydown', (e) => {
     const tag = e.target && e.target.tagName;
     if ((tag === 'INPUT' || tag === 'TEXTAREA') && e.key !== 'Escape') return;
-    if (e.key === '1') setMode('press');
-    else if (e.key === '2') setMode('pinch');
-    else if (e.key === '3') setMode('pull');
-    else if (e.key === 'r' || e.key === 'R') drop();
-    else if (e.key === 'f' || e.key === 'F') setFeelOpen(feelPanel.hidden);
-    else if (e.key === 'Escape' && !feelPanel.hidden) { setFeelOpen(false); feelToggle.focus(); }
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const k = e.key.toLowerCase();
+    if (k === '1') setMode('press');
+    else if (k === '2') setMode('pinch');
+    else if (k === '3') setMode('pull');
+    else if (k === 'r') drop();
+    else if (k === 'f') setPanel(openPanel === 'feel' ? null : 'feel', false);
+    else if (k === 'm' && music && music.supported) setPlaying(!music.playing);
+    else if (e.key === 'Escape' && openPanel) {
+      const toggle = panels[openPanel].toggle;
+      setPanel(null);
+      toggle.focus();
+    }
   });
+
+  // ---------------------------------------------------------------- quality
+  // Drop resolution, glitter count and solver rate in steps if the frame rate
+  // stays low. Phones start one step down.
+  const QUALITY = [
+    { pixelRatio: 2, flakes: 1, rate: 720, maxSub: 24 },
+    { pixelRatio: 1.5, flakes: 0.7, rate: 720, maxSub: 24 },
+    { pixelRatio: 1.15, flakes: 0.45, rate: 600, maxSub: 18 },
+    { pixelRatio: 0.9, flakes: 0.3, rate: 480, maxSub: 16 },
+  ];
+  const deviceRatio = window.devicePixelRatio || 1;
+  let qualityLevel = coarse ? 1 : 0;
+  let qTime = 0, qFrames = 0, qWait = 3;
+  function applyQuality() {
+    const q = QUALITY[qualityLevel];
+    renderer.setPixelRatio(Math.min(deviceRatio, q.pixelRatio));
+    resize();
+    pinkMesh.count = Math.round(pinkFlakes.count * q.flakes);
+    holoMesh.count = Math.round(holoFlakes.count * q.flakes);
+  }
+  function watchQuality(rawDt) {
+    if (qualityLevel >= QUALITY.length - 1 || document.hidden || rawDt > 0.25) return;
+    if ((qWait -= rawDt) > 0) return;
+    qTime += rawDt;
+    qFrames++;
+    if (qTime < 2) return;
+    const avg = qTime / qFrames;
+    qTime = 0; qFrames = 0;
+    if (avg > 1 / 40) {
+      qualityLevel++;
+      applyQuality();
+      qWait = 2;
+    }
+  }
+  applyQuality();
 
   // ------------------------------------------------------------------ loop
   if (!reduceMotion) sb.reset(1.2, 0.22); // land on an edge for a first wobble
@@ -948,8 +1163,10 @@
   let prevT = performance.now();
   function frame(now) {
     requestAnimationFrame(frame);
-    const dt = Math.min(Math.max((now - prevT) / 1000, 1 / 240), 1 / 30);
+    const raw = (now - prevT) / 1000;
+    const dt = Math.min(Math.max(raw, 1 / 240), 1 / 30);
     prevT = now;
+    watchQuality(raw);
 
     if (!action || action.kind !== 'orbit') {
       orbit.theta += orbit.vt;
@@ -963,11 +1180,13 @@
 
     if (action) {
       if (action.kind === 'press' || action.kind === 'pinch') updatePress(dt, false);
+      else if (action.kind === 'squeeze') updateSqueeze(dt, false);
       else if (action.kind === 'pull') updatePull();
     }
 
-    // keep the solver's substep near 1/720 s regardless of display rate
-    sb.substeps = clamp(Math.round(dt * 720), 6, 24);
+    // keep the solver's substep near 1/720 s (1/480 s on slow devices)
+    const q = QUALITY[qualityLevel];
+    sb.substeps = clamp(Math.round(dt * q.rate), 6, q.maxSub);
     sb.step(dt);
     if (!sb.isHealthy()) {
       endAction();
